@@ -39,6 +39,8 @@ interface EventDetails {
   registrationStyle: 'cta_url' | 'url_only'
   registrationText: string
   registrationUrl: string
+  registrationQrDataUrl?: string
+  registrationQrDisplay?: 'none' | 'qr_only' | 'qr_and_link'
 }
 
 interface BannerState {
@@ -88,35 +90,35 @@ interface FormatOption {
 const formatOptions: FormatOption[] = [
   {
     id: 'event_widescreen',
-    name: 'Event Cover',
+    name: '活动封面',
     width: 1920,
     height: 1080,
     channels: ['LinkedIn', 'X', 'YouTube', 'Facebook', 'Meetup'],
   },
   {
     id: 'speaker_square',
-    name: 'Speaker Profile',
+    name: '演讲者头像',
     width: 1080,
     height: 1080,
     channels: ['Instagram', 'LinkedIn', 'X', 'BlueSky'],
   },
   {
     id: 'speaker_banner',
-    name: 'Speaker Banner',
+    name: '演讲者横幅',
     width: 1080,
     height: 1350,
     channels: ['Instagram', 'LinkedIn', 'X', 'Facebook', 'BlueSky', 'Threads'],
   },
   {
     id: 'social_promo',
-    name: 'Social Promo',
+    name: '社交推广',
     width: 1080,
     height: 1350,
     channels: ['Instagram', 'LinkedIn', 'X', 'Facebook', 'BlueSky', 'Threads'],
   },
   {
     id: 'luma_cover',
-    name: 'Luma Cover',
+    name: 'Luma 封面',
     width: 1000,
     height: 1000,
     channels: ['Luma'],
@@ -138,7 +140,7 @@ const brandTitleLine2 = 'Dev Days'
 const fixedEventTitle = 'GitHub Copilot Dev Days'
 const lumaCityColor = '#00d12f'
 
-const steps = ['Format', 'Event', 'Speakers', 'Partners', 'Export']
+const steps = ['格式', '活动', '演讲者', '合作伙伴', '导出']
 const BANNER_HISTORY_STORAGE_KEY = 'banner-history-v1'
 const MAX_HISTORY_ITEMS = 20
 const MAX_SPEAKERS = 4
@@ -179,14 +181,16 @@ function buildDefaultState(): BannerState {
       includeSupportedBy: false,
       registrationEnabled: true,
       registrationStyle: 'cta_url',
-      registrationText: 'Register now',
+      registrationText: '立即注册',
+        registrationQrDataUrl: '',
+        registrationQrDisplay: 'qr_and_link',
       registrationUrl: 'gh.io/devdays',
     },
     speakers: [
       {
         id: uid(),
-        name: 'Speaker Name',
-        role: 'Speaker Role',
+        name: '演讲者姓名',
+        role: '演讲者职位',
       },
     ],
     partners: [],
@@ -526,7 +530,7 @@ async function renderBanner(
 
     ctx.fillStyle = '#8b949e'
     ctx.font = `600 ${headingSize}px "Mona Sans", sans-serif`
-    ctx.fillText('Organization', organizationTitleX, titleY)
+    ctx.fillText('主办方', organizationTitleX, titleY)
 
     if (showOrganizerLogo && state.event.organizerLogoDataUrl) {
       try {
@@ -546,7 +550,7 @@ async function renderBanner(
 
     const showSupportedBy = state.event.includeSupportedBy && state.partners.length > 0
     if (showSupportedBy) {
-      ctx.fillText('Supported by', supportedByTitleX, titleY)
+      ctx.fillText('支持单位', supportedByTitleX, titleY)
 
       const logos = state.partners.slice(0, 3)
       const logosY = contentTopY
@@ -728,68 +732,136 @@ async function renderBanner(
     const infoH = Math.round(height * (isSocialPromo ? 0.17 : 0.16))
     const registerTopGap = 40
     const registerBottomGap = 40
-    let nextSectionStartY = Math.round(
-      isSocialPromo
-        ? height * 0.67
-        : Math.max(height * 0.78, speakerBannerProfileBottomY + registerTopGap),
-    )
+    const contentBottomY = isSocialPromo ? socialPromoLocationBottomY : speakerBannerProfileBottomY
+    const maxInfoY = height - infoH - Math.round(padding * 0.35)
+    const infoY = maxInfoY
 
-    if (state.event.registrationEnabled && state.event.registrationUrl.trim()) {
-      const registrationScale = isSocialPromo ? socialPromoScale : 1
-      const barHeight = Math.round(height * 0.082 * registrationScale)
-      const barW = width - padding * 2
-      const textInset = Math.round(barHeight * 0.3)
-      const organizationLabelSize = Math.round(metaSize * 1.2 * registrationScale)
-      const labelSize = Math.max(18, organizationLabelSize)
-      const urlSize = labelSize
-
+    // Draw registration bar / QR code area. Support showing QR only, link only, or both.
+    {
       const urlText = state.event.registrationUrl.trim()
-      const ctaText = state.event.registrationStyle === 'url_only' ? '' : state.event.registrationText.trim() || 'Register'
-      const lineSize = Math.max(urlSize, labelSize)
-      const lineY = Math.max(
-        Math.round(isSocialPromo ? height * 0.74 : height * 0.72),
-        Math.round(
-          (isSocialPromo ? socialPromoLocationBottomY : speakerBannerProfileBottomY) +
-            registerTopGap +
-            lineSize * 0.8,
-        ),
-      )
-      const labelX = padding
-      const urlRightX = width - padding
-      const maxUrlW = Math.max(120, barW - textInset * 2)
-      const registerLabelColor = state.colors.secondary
-      const registerUrlColor = lumaCityColor
-      const registerGap = Math.round(metaSize * 0.45)
+      const qrDataUrl = state.event.registrationQrDataUrl?.trim() ?? ''
+      const qrDisplay = (state.event.registrationQrDisplay ?? 'qr_and_link') as 'none' | 'qr_only' | 'qr_and_link'
+      const hasQr = qrDataUrl.length > 0
+      const hasUrl = urlText.length > 0
+      const showQr = qrDisplay !== 'none' && hasQr
+      const showText = qrDisplay !== 'qr_only' && hasUrl
 
-      ctx.textBaseline = 'middle'
+      if (state.event.registrationEnabled && (showQr || showText)) {
+        const registrationScale = isSocialPromo ? socialPromoScale : 1
+        const barHeight = Math.round(height * 0.082 * registrationScale)
+        const organizationLabelSize = Math.round(metaSize * 1.2 * registrationScale)
+        const labelSizeBase = Math.max(18, organizationLabelSize)
 
-      if (ctaText) {
-        ctx.fillStyle = registerLabelColor
-        ctx.font = `500 ${labelSize}px "Mona Sans", sans-serif`
-        const label = wrapText(ctx, `${ctaText}:`, maxUrlW * 0.45, 1)[0] || `${ctaText}:`
-        ctx.fillText(label, labelX, lineY)
+        const ctaText = state.event.registrationStyle === 'url_only' ? '' : state.event.registrationText.trim() || '立即报名'
+        const labelX = padding
+        const registerLabelColor = state.colors.secondary
+        const registerUrlColor = lumaCityColor
+        const registerGap = Math.round(metaSize * 0.45)
 
-        const labelWidth = ctx.measureText(label).width
-        const urlStartX = labelX + labelWidth + registerGap
-        const availableUrlW = Math.max(100, urlRightX - urlStartX)
-        ctx.fillStyle = registerUrlColor
-        ctx.font = `500 ${Math.max(urlSize, labelSize)}px "Mona Sans", sans-serif`
-        const shortUrl = wrapText(ctx, urlText, availableUrlW, 1)[0] || urlText
-        ctx.fillText(shortUrl, urlStartX, lineY)
-      } else {
-        ctx.fillStyle = registerUrlColor
-        ctx.font = `500 ${Math.max(urlSize, labelSize)}px "Mona Sans", sans-serif`
-        const shortUrl = wrapText(ctx, urlText, Math.max(100, urlRightX - labelX), 1)[0] || urlText
-        ctx.fillText(shortUrl, labelX, lineY)
+        // Anchor registration block above the organization panel.
+        const registrationBottomY = Math.round(infoY - registerBottomGap)
+        const minRegistrationTopY = Math.round(contentBottomY + registerTopGap)
+
+        // Compute base sizes first, then (if needed) apply a single scale based on the
+        // maximum content height (link + QR) so toggling QR display won't change font sizes.
+        let labelSize = labelSizeBase
+        let urlSize = labelSizeBase
+        let qrSize = hasQr ? Math.min(Math.round(barHeight * 1.35), Math.round(height * 0.18)) : 0
+
+        const computeBlockHeight = (assumeShowText: boolean, assumeShowQr: boolean) => {
+          const linkLineHeight = Math.round(labelSize * 1.25)
+          const betweenLinesGap = assumeShowText && assumeShowQr ? Math.round(labelSize * 0.35) : 0
+          const qrRowHeight = Math.max(linkLineHeight, qrSize)
+          return (assumeShowText ? linkLineHeight : 0) + (assumeShowQr ? qrRowHeight : 0) + betweenLinesGap
+        }
+
+        const availableH = registrationBottomY - minRegistrationTopY
+        if (availableH > 0) {
+          const maxContentH = computeBlockHeight(hasUrl, hasQr)
+          if (maxContentH > 0 && maxContentH > availableH) {
+            const scale = Math.max(0.7, Math.min(1, availableH / maxContentH))
+            labelSize = Math.max(14, Math.round(labelSizeBase * scale))
+            urlSize = labelSize
+            qrSize = hasQr ? Math.max(12, Math.round(qrSize * scale)) : 0
+          }
+        }
+
+        const computeLayout = () => {
+          const linkLineHeight = Math.round(labelSize * 1.25)
+          const qrRowHeight = Math.max(linkLineHeight, qrSize)
+          const betweenLinesGap = showText && showQr ? Math.round(labelSize * 0.35) : 0
+          const blockHeight = (showText ? linkLineHeight : 0) + (showQr ? qrRowHeight : 0) + betweenLinesGap
+
+          let cursorBottomY = registrationBottomY
+
+          let qrLineCenterY = 0
+          if (showQr) {
+            cursorBottomY -= qrRowHeight
+            qrLineCenterY = cursorBottomY + qrRowHeight / 2
+            cursorBottomY -= betweenLinesGap
+          }
+
+          let linkLineCenterY = 0
+          if (showText) {
+            cursorBottomY -= linkLineHeight
+            linkLineCenterY = cursorBottomY + linkLineHeight / 2
+          }
+
+          const blockTopY = cursorBottomY
+          return { linkLineHeight, qrRowHeight, betweenLinesGap, blockHeight, blockTopY, linkLineCenterY, qrLineCenterY }
+        }
+
+        const layout = computeLayout()
+
+        // Draw first line: CTA + URL
+        if (showText && urlText) {
+          ctx.textBaseline = 'middle'
+          if (ctaText) {
+            ctx.fillStyle = registerLabelColor
+            ctx.font = `500 ${labelSize}px "Mona Sans", sans-serif`
+            const label = `${ctaText}:`
+            ctx.fillText(label, labelX, layout.linkLineCenterY)
+
+            const labelWidth = ctx.measureText(label).width
+            const urlStartX = labelX + labelWidth + registerGap
+            const availableUrlW = Math.max(100, width - padding - urlStartX)
+            ctx.fillStyle = registerUrlColor
+            ctx.font = `500 ${Math.max(urlSize, labelSize)}px "Mona Sans", sans-serif`
+            const shortUrl = wrapText(ctx, urlText, availableUrlW, 1)[0] || urlText
+            ctx.fillText(shortUrl, urlStartX, layout.linkLineCenterY)
+          } else {
+            ctx.fillStyle = registerUrlColor
+            ctx.font = `500 ${Math.max(urlSize, labelSize)}px "Mona Sans", sans-serif`
+            const shortUrl = wrapText(ctx, urlText, Math.max(100, width - padding - labelX), 1)[0] || urlText
+            ctx.fillText(shortUrl, labelX, layout.linkLineCenterY)
+          }
+        }
+
+        // Draw QR row: label + QR image (QR follows label naturally)
+        if (showQr) {
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = registerLabelColor
+          ctx.font = `500 ${labelSize}px "Mona Sans", sans-serif`
+          const qrLabel = '扫码报名：'
+          ctx.fillText(qrLabel, labelX, layout.qrLineCenterY)
+
+          try {
+            const qrImg = await loadImage(qrDataUrl)
+            const qrLabelWidth = ctx.measureText(qrLabel).width
+            const qrStartX = Math.round(labelX + qrLabelWidth + registerGap)
+            const maxQrSize = Math.max(12, Math.round(width - padding - qrStartX))
+            const finalQrSize = Math.min(qrSize, maxQrSize)
+            const qrY = Math.round(layout.qrLineCenterY - finalQrSize / 2)
+            ctx.drawImage(qrImg, qrStartX, qrY, finalQrSize, finalQrSize)
+          } catch {
+            // ignore QR draw errors
+          }
+        }
+
+        ctx.textBaseline = 'alphabetic'
       }
-      ctx.textBaseline = 'alphabetic'
-
-      const lineBottomY = lineY + Math.round(lineSize * 0.35)
-      nextSectionStartY = Math.round(lineBottomY + registerBottomGap)
     }
 
-    const maxInfoY = height - infoH - Math.round(padding * 0.35)
-    const infoY = Math.min(nextSectionStartY, maxInfoY)
     await drawOrganizationPanel(infoY, infoH, isSocialPromo ? socialPromoScale : 1)
   }
 
@@ -886,7 +958,7 @@ function App() {
     }
 
     draw().catch(() => {
-      if (mounted) setError('Failed to render preview.')
+      if (mounted) setError('预览渲染失败。')
     })
 
     return () => {
@@ -1025,16 +1097,16 @@ function App() {
         return next
       })
     } catch {
-      setError('Could not export file.')
+      setError('导出失败。')
     }
   }
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      throw new Error('Invalid file. Please upload images only.')
+        throw new Error('无效文件。请仅上传图片。')
     }
     if (file.size > 8 * 1024 * 1024) {
-      throw new Error('File too large. Max size is 8MB per image.')
+        throw new Error('文件过大。每张图片最大为 8MB。')
     }
     return fileToDataUrl(file)
   }
@@ -1049,8 +1121,10 @@ function App() {
         includeSupportedBy: item.state.event?.includeSupportedBy ?? false,
         registrationEnabled: item.state.event?.registrationEnabled ?? true,
         registrationStyle: item.state.event?.registrationStyle ?? 'cta_url',
-        registrationText: item.state.event?.registrationText ?? 'Register now',
+        registrationText: item.state.event?.registrationText ?? '立即注册',
         registrationUrl: item.state.event?.registrationUrl ?? 'gh.io/devdays',
+        registrationQrDataUrl: item.state.event?.registrationQrDataUrl ?? '',
+        registrationQrDisplay: item.state.event?.registrationQrDisplay ?? 'qr_and_link',
       },
     })
     setStep(0)
@@ -1076,10 +1150,10 @@ function App() {
           <div className="brand-icon" aria-hidden="true">
             <CopilotIcon size={24} />
           </div>
-          <div>
-            <h1>Banner Generator</h1>
-            <p className="eyebrow">Create professional social media banners</p>
-          </div>
+              <div>
+                <h1>横幅生成器</h1>
+                <p className="eyebrow">创建专业的社交媒体横幅</p>
+              </div>
         </div>
       </header>
 
@@ -1099,14 +1173,14 @@ function App() {
             ))}
           </div>
 
-          {backgroundFailed && <p className="warning">Background image unavailable: using gradient fallback for preview.</p>}
+          {backgroundFailed && <p className="warning">背景图片不可用：预览使用渐变作为回退。</p>}
 
           {effectiveStep === 0 && (
             <div className="section-block">
-              <h2>Select format</h2>
+                <h2>选择格式</h2>
               <div className="format-groups">
                 <div className="format-group">
-                  <h3>Event Cover</h3>
+                    <h3>活动封面</h3>
                   <div className="grid-cards format-grid-pair">
                     {coverFormatIds
                       .map((id) => formatOptions.find((option) => option.id === id))
@@ -1129,7 +1203,7 @@ function App() {
                 </div>
 
                 <div className="format-group">
-                  <h3>Socials</h3>
+                    <h3>社交媒体</h3>
                   <div className="grid-cards format-grid-pair">
                     {socialFormatIds
                       .map((id) => formatOptions.find((option) => option.id === id))
@@ -1156,62 +1230,62 @@ function App() {
 
           {effectiveStep === 1 && (
             <div className="section-block">
-              <h2>Event details</h2>
-              <div className="form-grid single">
-                <label>
-                  City
-                  <input
-                    type="text"
-                    value={state.event.city}
-                    onChange={(event) =>
-                      setState((previous) => ({
-                        ...previous,
-                        event: { ...previous.event, city: event.target.value },
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  <span className="label-row">
-                    Date and time
-                    <small>Example: Apr 15 • 7:00 PM</small>
-                  </span>
-                  <input
-                    type="text"
-                    value={state.event.dateTime}
-                    onChange={(event) =>
-                      setState((previous) => ({
-                        ...previous,
-                        event: { ...previous.event, dateTime: event.target.value },
-                      }))
-                    }
-                  />
-                </label>
-                {!isMinimalCover && (
+                <h2>活动详情</h2>
+                <div className="form-grid single">
                   <label>
-                    <span className="label-row">
-                      Location
-                      <small>Can wrap to 2 lines in Social Promo</small>
-                    </span>
-                    <textarea
-                      rows={2}
-                      value={state.event.location}
+                    城市
+                    <input
+                      type="text"
+                      value={state.event.city}
                       onChange={(event) =>
                         setState((previous) => ({
                           ...previous,
-                          event: { ...previous.event, location: event.target.value },
+                          event: { ...previous.event, city: event.target.value },
                         }))
                       }
                     />
                   </label>
-                )}
+                  <label>
+                    <span className="label-row">
+                      日期和时间
+                      <small>示例：Apr 15 • 7:00 PM</small>
+                    </span>
+                    <input
+                      type="text"
+                      value={state.event.dateTime}
+                      onChange={(event) =>
+                        setState((previous) => ({
+                          ...previous,
+                          event: { ...previous.event, dateTime: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  {!isMinimalCover && (
+                    <label>
+                      <span className="label-row">
+                        地点
+                        <small>在“社交推广”格式中可换为 2 行</small>
+                      </span>
+                      <textarea
+                        rows={2}
+                        value={state.event.location}
+                        onChange={(event) =>
+                          setState((previous) => ({
+                            ...previous,
+                            event: { ...previous.event, location: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                  )}
                 {(isSpeakerBanner || isSocialPromo) && (
                   <>
                     {/* Organization name field removed. Only logo upload remains. */}
                     <label>
                       <span className="label-row">
-                        Organizer logo *
-                        <small>Used in banner branding area</small>
+                        主办方标志 *
+                        <small>用于横幅品牌区域</small>
                       </span>
                       <input
                         type="file"
@@ -1227,7 +1301,7 @@ function App() {
                                 event: { ...previous.event, organizerLogoDataUrl: dataUrl },
                               }))
                             } catch (fileError) {
-                              setError(fileError instanceof Error ? fileError.message : 'Invalid file.')
+                              setError(fileError instanceof Error ? fileError.message : '无效文件。')
                             }
                           })()
                         }}
@@ -1249,8 +1323,8 @@ function App() {
                       }
                     >
                       <div>
-                        <strong>Show registration footer bar</strong>
-                        <span>Adds a CTA + short URL strip at the bottom of the banner.</span>
+                        <strong>显示注册底部栏</strong>
+                        <span>在横幅底部添加 CTA 与短链接条。</span>
                       </div>
                       <span className={`switch ${state.event.registrationEnabled ? 'on' : ''}`} aria-hidden="true">
                         <span />
@@ -1260,7 +1334,7 @@ function App() {
                     {state.event.registrationEnabled && (
                       <>
                         <label>
-                          Registration bar style
+                          注册栏样式
                           <select
                             value={state.event.registrationStyle}
                             onChange={(event) =>
@@ -1273,13 +1347,13 @@ function App() {
                               }))
                             }
                           >
-                            <option value="cta_url">CTA + URL</option>
-                            <option value="url_only">URL only</option>
+                            <option value="cta_url">CTA + 链接</option>
+                            <option value="url_only">仅链接</option>
                           </select>
                         </label>
 
                         <label>
-                          CTA text
+                          CTA 文案
                           <input
                             type="text"
                             value={state.event.registrationText}
@@ -1289,12 +1363,12 @@ function App() {
                                 event: { ...previous.event, registrationText: event.target.value },
                               }))
                             }
-                            placeholder="Register now"
+                            placeholder="立即注册"
                           />
                         </label>
 
                         <label>
-                          Registration URL *
+                          注册链接 *
                           <input
                             type="text"
                             value={state.event.registrationUrl}
@@ -1307,6 +1381,53 @@ function App() {
                             placeholder="gh.io/devdays"
                           />
                         </label>
+                        <label>
+                          报名二维码
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) => {
+                              void (async () => {
+                                try {
+                                  const file = event.target.files?.[0]
+                                  if (!file) return
+                                  const dataUrl = await handleFile(file)
+                                  setState((previous) => ({
+                                    ...previous,
+                                    event: { ...previous.event, registrationQrDataUrl: dataUrl },
+                                  }))
+                                } catch (fileError) {
+                                  setError(fileError instanceof Error ? fileError.message : '无效文件。')
+                                }
+                              })()
+                            }}
+                          />
+                          {state.event.registrationQrDataUrl && (
+                            <div style={{ marginTop: 8 }}>
+                              <img src={state.event.registrationQrDataUrl} alt="报名二维码预览" style={{ width: 64, height: 64 }} />
+                            </div>
+                          )}
+                        </label>
+
+                        <label>
+                          二维码显示方式
+                          <select
+                            value={state.event.registrationQrDisplay}
+                            onChange={(event) =>
+                              setState((previous) => ({
+                                ...previous,
+                                event: {
+                                  ...previous.event,
+                                  registrationQrDisplay: event.target.value as EventDetails['registrationQrDisplay'],
+                                },
+                              }))
+                            }
+                          >
+                            <option value="none">不显示</option>
+                            <option value="qr_only">仅二维码</option>
+                            <option value="qr_and_link">二维码 + 链接</option>
+                          </select>
+                        </label>
                       </>
                     )}
                   </>
@@ -1317,16 +1438,16 @@ function App() {
 
           {effectiveStep === 2 && !isMinimalCover && !isSocialPromo && (
             <div className="section-block">
-              <h2>Speakers (up to {MAX_SPEAKERS})</h2>
-              <p className="section-description">For stable real-time preview and export, we support up to {MAX_SPEAKERS} speakers.</p>
-              <button type="button" onClick={addSpeaker} disabled={state.speakers.length >= MAX_SPEAKERS}>
-                Add speaker
-              </button>
+                  <h2>演讲者（最多 {MAX_SPEAKERS} 人）</h2>
+                  <p className="section-description">为保证实时预览和导出稳定，我们支持最多 {MAX_SPEAKERS} 名演讲者。</p>
+                  <button type="button" onClick={addSpeaker} disabled={state.speakers.length >= MAX_SPEAKERS}>
+                    添加演讲者
+                  </button>
               <div className="stack">
                 {state.speakers.map((speaker) => (
                   <article key={speaker.id} className="speaker-card">
                     <label>
-                      Name *
+                      姓名 *
                       <input
                         type="text"
                         value={speaker.name}
@@ -1341,7 +1462,7 @@ function App() {
                       />
                     </label>
                     <label>
-                      Role
+                      职位/角色
                       <input
                         type="text"
                         value={speaker.role ?? ''}
@@ -1357,7 +1478,7 @@ function App() {
                     </label>
 
                     <label>
-                      Photo
+                      照片
                       <input
                         type="file"
                         accept="image/*"
@@ -1374,7 +1495,7 @@ function App() {
                                 ),
                               }))
                             } catch (fileError) {
-                              setError(fileError instanceof Error ? fileError.message : 'Invalid file.')
+                              setError(fileError instanceof Error ? fileError.message : '无效文件。')
                             }
                           })()
                         }}
@@ -1391,7 +1512,7 @@ function App() {
                         }))
                       }
                     >
-                      Remove
+                      删除
                     </button>
                   </article>
                 ))}
@@ -1401,79 +1522,79 @@ function App() {
 
           {effectiveStep === 3 && !isMinimalCover && (
             <div className="section-block">
-              <h2>Partners / Sponsors</h2>
-              {(isSpeakerBanner || isSocialPromo) && (
-                <button
-                  type="button"
-                  className="resolution-toggle"
-                  onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      event: { ...previous.event, includeSupportedBy: !previous.event.includeSupportedBy },
-                    }))
-                  }
-                >
-                  <div>
-                    <strong>Do you want to include partner logos?</strong>
-                    <span>Turn on to show the Supported by area when logos are uploaded.</span>
-                  </div>
-                  <span className={`switch ${state.event.includeSupportedBy ? 'on' : ''}`} aria-hidden="true">
-                    <span />
-                  </span>
-                </button>
-              )}
-              {(isSpeakerBanner || isSocialPromo) && <p className="section-description">You can add up to 3 partner logos.</p>}
-              <label>
-                Add logo
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={(isSpeakerBanner || isSocialPromo) && state.partners.length >= 3}
-                  onChange={(event) => {
-                    void (async () => {
-                      try {
-                        const file = event.target.files?.[0]
-                        if (!file) return
-                        if ((isSpeakerBanner || isSocialPromo) && state.partners.length >= 3) {
-                          setError('You can upload up to 3 partner logos for Speaker Banner and Social Promo.')
-                          return
+                <h2>合作伙伴 / 赞助商</h2>
+                {(isSpeakerBanner || isSocialPromo) && (
+                  <button
+                    type="button"
+                    className="resolution-toggle"
+                    onClick={() =>
+                      setState((previous) => ({
+                        ...previous,
+                        event: { ...previous.event, includeSupportedBy: !previous.event.includeSupportedBy },
+                      }))
+                    }
+                  >
+                    <div>
+                      <strong>是否包含合作伙伴标志？</strong>
+                      <span>开启后上传标志将显示“支持单位”区域。</span>
+                    </div>
+                    <span className={`switch ${state.event.includeSupportedBy ? 'on' : ''}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  </button>
+                )}
+                {(isSpeakerBanner || isSocialPromo) && <p className="section-description">最多可添加 3 个合作伙伴标志。</p>}
+                <label>
+                  添加标志
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={(isSpeakerBanner || isSocialPromo) && state.partners.length >= 3}
+                    onChange={(event) => {
+                      void (async () => {
+                        try {
+                          const file = event.target.files?.[0]
+                          if (!file) return
+                          if ((isSpeakerBanner || isSocialPromo) && state.partners.length >= 3) {
+                            setError('对于 Speaker Banner 和 Social Promo，最多可上传 3 个合作伙伴标志。')
+                            return
+                          }
+                          const dataUrl = await handleFile(file)
+                          setState((previous) => ({
+                            ...previous,
+                            partners: [...previous.partners, { id: uid(), imageDataUrl: dataUrl }],
+                          }))
+                        } catch (fileError) {
+                          setError(fileError instanceof Error ? fileError.message : '无效文件。')
                         }
-                        const dataUrl = await handleFile(file)
-                        setState((previous) => ({
-                          ...previous,
-                          partners: [...previous.partners, { id: uid(), imageDataUrl: dataUrl }],
-                        }))
-                      } catch (fileError) {
-                        setError(fileError instanceof Error ? fileError.message : 'Invalid file.')
-                      }
-                    })()
-                  }}
-                />
-              </label>
-              {(isSpeakerBanner || isSocialPromo) && (
-                <p className="section-description">
-                  {state.partners.length >= 3
-                    ? 'Partner logo limit reached (3/3). Remove one to upload another.'
-                    : `${3 - state.partners.length} slot(s) remaining.`}
-                </p>
-              )}
+                      })()
+                    }}
+                  />
+                </label>
+                {(isSpeakerBanner || isSocialPromo) && (
+                  <p className="section-description">
+                    {state.partners.length >= 3
+                      ? '已达到合作伙伴标志上限（3/3）。移除一个以上传另一个。'
+                      : `${3 - state.partners.length} 个插槽剩余。`}
+                  </p>
+                )}
 
               <div className="logos-grid">
                 {state.partners.map((partner) => (
                   <div key={partner.id} className="logo-tile">
-                    <img src={partner.imageDataUrl} alt="Partner logo" />
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() =>
-                        setState((previous) => ({
-                          ...previous,
-                          partners: previous.partners.filter((item) => item.id !== partner.id),
-                        }))
-                      }
-                    >
-                      Remove
-                    </button>
+                        <img src={partner.imageDataUrl} alt="合作伙伴标志" />
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() =>
+                            setState((previous) => ({
+                              ...previous,
+                              partners: previous.partners.filter((item) => item.id !== partner.id),
+                            }))
+                          }
+                        >
+                          删除
+                        </button>
                   </div>
                 ))}
               </div>
@@ -1482,79 +1603,79 @@ function App() {
 
           {effectiveStep === 4 && (
             <div className="section-block export-panel">
-              <h2>Export</h2>
-              <p className="section-description">Download your banner in your preferred format</p>
+                <h2>导出</h2>
+                <p className="section-description">以所选格式下载横幅</p>
 
-              <h3>File format</h3>
-              <div className="export-types">
-                <button
-                  type="button"
-                  className={`export-type ${state.export.type === 'png' ? 'selected' : ''}`}
-                  onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      export: { ...previous.export, type: 'png' },
-                    }))
-                  }
-                >
-                  <strong>PNG</strong>
-                  <span>Lossless, transparency</span>
-                  {state.export.type === 'png' && <em>✓</em>}
-                </button>
-                <button
-                  type="button"
-                  className={`export-type ${state.export.type === 'jpg' ? 'selected' : ''}`}
-                  onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      export: { ...previous.export, type: 'jpg' },
-                    }))
-                  }
-                >
-                  <strong>JPG</strong>
-                  <span>Smaller file size</span>
-                  {state.export.type === 'jpg' && <em>✓</em>}
-                </button>
-              </div>
-
-              <button
-                type="button"
-                className="resolution-toggle"
-                onClick={() =>
-                  setState((previous) => ({
-                    ...previous,
-                    export: { ...previous.export, scale: previous.export.scale === 1 ? 2 : 1 },
-                  }))
-                }
-              >
-                <div>
-                  <strong>High Resolution (2x)</strong>
-                  <span>Export at double resolution for crisp displays</span>
+                <h3>文件格式</h3>
+                <div className="export-types">
+                  <button
+                    type="button"
+                    className={`export-type ${state.export.type === 'png' ? 'selected' : ''}`}
+                    onClick={() =>
+                      setState((previous) => ({
+                        ...previous,
+                        export: { ...previous.export, type: 'png' },
+                      }))
+                    }
+                  >
+                    <strong>PNG</strong>
+                    <span>无损，支持透明</span>
+                    {state.export.type === 'png' && <em>✓</em>}
+                  </button>
+                  <button
+                    type="button"
+                    className={`export-type ${state.export.type === 'jpg' ? 'selected' : ''}`}
+                    onClick={() =>
+                      setState((previous) => ({
+                        ...previous,
+                        export: { ...previous.export, type: 'jpg' },
+                      }))
+                    }
+                  >
+                    <strong>JPG</strong>
+                    <span>更小文件大小</span>
+                    {state.export.type === 'jpg' && <em>✓</em>}
+                  </button>
                 </div>
-                <span className={`switch ${state.export.scale === 2 ? 'on' : ''}`} aria-hidden="true">
-                  <span />
-                </span>
-              </button>
 
-              <div className="resolution-card">
-                <p>Final Resolution</p>
-                <strong>
-                  {format.width * state.export.scale} × {format.height * state.export.scale} px
-                </strong>
-                <span>
-                  {format.name} • {state.export.type.toUpperCase()}
-                </span>
-              </div>
+                <button
+                  type="button"
+                  className="resolution-toggle"
+                  onClick={() =>
+                    setState((previous) => ({
+                      ...previous,
+                      export: { ...previous.export, scale: previous.export.scale === 1 ? 2 : 1 },
+                    }))
+                  }
+                >
+                  <div>
+                    <strong>高清（2x）</strong>
+                    <span>以两倍分辨率导出以获得更清晰显示</span>
+                  </div>
+                  <span className={`switch ${state.export.scale === 2 ? 'on' : ''}`} aria-hidden="true">
+                    <span />
+                  </span>
+                </button>
 
-              <button
-                type="button"
-                className="primary"
-                onClick={() => {
-                  void exportBanner()
-                }}
-              >
-                Download {state.export.type.toUpperCase()}
-              </button>
+                <div className="resolution-card">
+                  <p>最终分辨率</p>
+                  <strong>
+                    {format.width * state.export.scale} × {format.height * state.export.scale} px
+                  </strong>
+                  <span>
+                    {format.name} • {state.export.type.toUpperCase()}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    void exportBanner()
+                  }}
+                >
+                  下载 {state.export.type.toUpperCase()}
+                </button>
             </div>
           )}
 
@@ -1570,7 +1691,7 @@ function App() {
               }}
               disabled={currentVisibleStep <= 0}
             >
-              Back
+              上一步
             </button>
             <button
               type="button"
@@ -1582,32 +1703,32 @@ function App() {
               }}
               disabled={currentVisibleStep >= visibleStepIndexes.length - 1 || !canProceed}
             >
-              Next
+              下一步
             </button>
           </footer>
         </section>
 
         <section className="panel preview" aria-label="Preview">
-          <h2>Real-time preview</h2>
+          <h2>实时预览</h2>
           <p>
-            Active format: <strong>{format.name}</strong> ({format.width}x{format.height})
+            当前格式： <strong>{format.name}</strong> ({format.width}x{format.height})
           </p>
           {!showMultiSpeakerPreviewGrid && (
             <div className="canvas-wrap" style={{ aspectRatio: `${format.width} / ${format.height}` }}>
-              <canvas ref={canvasRef} aria-label="Banner preview" />
+              <canvas ref={canvasRef} aria-label="横幅预览" />
             </div>
           )}
 
           {speakerPreviews.length > 0 && (
             <div className="speaker-preview-block">
               <div className="history-header">
-                <h3>Speaker banners</h3>
-                <span>{speakerPreviews.length} real-time preview(s)</span>
+                <h3>演讲者横幅</h3>
+                <span>{speakerPreviews.length} 个实时预览</span>
               </div>
               <div className="speaker-preview-grid">
                 {speakerPreviews.map((item) => (
                   <article key={item.id} className="speaker-preview-item">
-                    <img src={item.previewDataUrl} alt={`Preview banner for ${item.name}`} />
+                    <img src={item.previewDataUrl} alt={`为 ${item.name} 的预览横幅`} />
                     <strong>{item.name}</strong>
                   </article>
                 ))}
@@ -1617,31 +1738,31 @@ function App() {
 
           <div className="history-block">
             <div className="history-header">
-              <h3>Previous banners</h3>
+              <h3>历史横幅</h3>
               <button type="button" onClick={clearHistory} disabled={history.length === 0}>
-                Clear all
+                全部清除
               </button>
             </div>
             {history.length === 0 ? (
-              <p className="history-empty">No previous banners yet. Export one to save it here.</p>
+              <p className="history-empty">尚无历史横幅。导出后会保存在这里。</p>
             ) : (
               <div className="history-list">
                 {history.map((item) => (
                   <article key={item.id} className="history-item">
-                    <img src={item.previewDataUrl} alt="Saved banner preview" />
+                    <img src={item.previewDataUrl} alt="已保存的横幅预览" />
                     <div className="history-meta">
                       <strong>{formatOptions.find((option) => option.id === item.state.format)?.name ?? item.state.format}</strong>
                       <span>{new Date(item.createdAt).toLocaleString()}</span>
                       <span>
-                        {item.state.event.city || 'City'} • {item.state.event.dateTime || 'Date/Time'}
+                        {item.state.event.city || '城市'} • {item.state.event.dateTime || '日期/时间'}
                       </span>
                     </div>
                     <div className="history-actions">
                       <button type="button" onClick={() => restoreBanner(item)}>
-                        Open
+                        打开
                       </button>
                       <button type="button" className="danger" onClick={() => removeHistoryItem(item.id)}>
-                        Delete
+                        删除
                       </button>
                     </div>
                   </article>
