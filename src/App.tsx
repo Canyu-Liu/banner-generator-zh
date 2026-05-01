@@ -550,7 +550,7 @@ async function renderBanner(
 
     const showSupportedBy = state.event.includeSupportedBy && state.partners.length > 0
     if (showSupportedBy) {
-      ctx.fillText('支持单位', supportedByTitleX, titleY)
+      ctx.fillText('支持社区', supportedByTitleX, titleY)
 
       const logos = state.partners.slice(0, 3)
       const logosY = contentTopY
@@ -842,7 +842,7 @@ async function renderBanner(
           ctx.textBaseline = 'middle'
           ctx.fillStyle = registerLabelColor
           ctx.font = `500 ${labelSize}px "Mona Sans", sans-serif`
-          const qrLabel = '扫码报名：'
+          const qrLabel = '立即报名：'
           ctx.fillText(qrLabel, labelX, layout.qrLineCenterY)
 
           try {
@@ -1536,7 +1536,7 @@ function App() {
                   >
                     <div>
                       <strong>是否包含合作伙伴标志？</strong>
-                      <span>开启后上传标志将显示“支持单位”区域。</span>
+                      <span>开启后上传标志将显示支持社区”区域。</span>
                     </div>
                     <span className={`switch ${state.event.includeSupportedBy ? 'on' : ''}`} aria-hidden="true">
                       <span />
